@@ -16,12 +16,12 @@
 
 package org.springframework.web.context.support;
 
-import java.io.IOException;
-
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.beans.factory.xml.ResourceEntityResolver;
 import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
+
+import java.io.IOException;
 
 /**
  * {@link org.springframework.web.context.WebApplicationContext} implementation
@@ -61,18 +61,25 @@ import org.springframework.beans.factory.xml.XmlBeanDefinitionReader;
  */
 public class XmlWebApplicationContext extends AbstractRefreshableWebApplicationContext {
 
-	/** Default config location for the root context. */
+	/**
+	 * Default config location for the root context.
+	 */
 	public static final String DEFAULT_CONFIG_LOCATION = "/WEB-INF/applicationContext.xml";
 
-	/** Default prefix for building a config location for a namespace. */
+	/**
+	 * Default prefix for building a config location for a namespace.
+	 */
 	public static final String DEFAULT_CONFIG_LOCATION_PREFIX = "/WEB-INF/";
 
-	/** Default suffix for building a config location for a namespace. */
+	/**
+	 * Default suffix for building a config location for a namespace.
+	 */
 	public static final String DEFAULT_CONFIG_LOCATION_SUFFIX = ".xml";
 
 
 	/**
 	 * Loads the bean definitions via an XmlBeanDefinitionReader.
+	 *
 	 * @see org.springframework.beans.factory.xml.XmlBeanDefinitionReader
 	 * @see #initBeanDefinitionReader
 	 * @see #loadBeanDefinitions
@@ -80,14 +87,21 @@ public class XmlWebApplicationContext extends AbstractRefreshableWebApplicationC
 	@Override
 	protected void loadBeanDefinitions(DefaultListableBeanFactory beanFactory) throws BeansException, IOException {
 		// Create a new XmlBeanDefinitionReader for the given BeanFactory.
+		// 创建XmlBeanDefinitionReader，并通过回调设置到BeanFactory中
 		XmlBeanDefinitionReader beanDefinitionReader = new XmlBeanDefinitionReader(beanFactory);
-
+		// 为XmlBeanDefinitionReader配置Environment
 		// Configure the bean definition reader with this context's
 		// resource loading environment.
 		beanDefinitionReader.setEnvironment(getEnvironment());
+		// 为XmlBeanDefinitionReader配置ResourceLoader，
+		// 因为DefaultResourceLoader是父类，所以this可以直接被使用
 		beanDefinitionReader.setResourceLoader(this);
 		beanDefinitionReader.setEntityResolver(new ResourceEntityResolver(this));
 
+		// 允许子类提供reader的自定义初始化，然后继续实际加载bean定义。
+		// initBeanDefinitionReader初始化用于加载此上下文的bean定义的bean定义读取器；默认实现是空的。
+		// 然后下面通过重载的loadBeanDefinitions来做具体的bean解析（这里用到的是XmlBeanDefinitionReader这个解析器）；
+		// 使用给定的XmlBeanDefinitionReader加载bean definitions。
 		// Allow a subclass to provide custom initialization of the reader,
 		// then proceed with actually loading the bean definitions.
 		initBeanDefinitionReader(beanDefinitionReader);
@@ -99,6 +113,7 @@ public class XmlWebApplicationContext extends AbstractRefreshableWebApplicationC
 	 * definitions of this context. Default implementation is empty.
 	 * <p>Can be overridden in subclasses, e.g. for turning off XML validation
 	 * or using a different XmlBeanDefinitionParser implementation.
+	 *
 	 * @param beanDefinitionReader the bean definition reader used by this context
 	 * @see org.springframework.beans.factory.xml.XmlBeanDefinitionReader#setValidationMode
 	 * @see org.springframework.beans.factory.xml.XmlBeanDefinitionReader#setDocumentReaderClass
@@ -112,6 +127,7 @@ public class XmlWebApplicationContext extends AbstractRefreshableWebApplicationC
 	 * therefore this method is just supposed to load and/or register bean definitions.
 	 * <p>Delegates to a ResourcePatternResolver for resolving location patterns
 	 * into Resource instances.
+	 *
 	 * @throws IOException if the required XML document isn't found
 	 * @see #refreshBeanFactory
 	 * @see #getConfigLocations
@@ -120,6 +136,7 @@ public class XmlWebApplicationContext extends AbstractRefreshableWebApplicationC
 	 */
 	protected void loadBeanDefinitions(XmlBeanDefinitionReader reader) throws IOException {
 		String[] configLocations = getConfigLocations();
+		// 遍历xml文件
 		if (configLocations != null) {
 			for (String configLocation : configLocations) {
 				reader.loadBeanDefinitions(configLocation);
@@ -135,10 +152,9 @@ public class XmlWebApplicationContext extends AbstractRefreshableWebApplicationC
 	@Override
 	protected String[] getDefaultConfigLocations() {
 		if (getNamespace() != null) {
-			return new String[] {DEFAULT_CONFIG_LOCATION_PREFIX + getNamespace() + DEFAULT_CONFIG_LOCATION_SUFFIX};
-		}
-		else {
-			return new String[] {DEFAULT_CONFIG_LOCATION};
+			return new String[]{DEFAULT_CONFIG_LOCATION_PREFIX + getNamespace() + DEFAULT_CONFIG_LOCATION_SUFFIX};
+		} else {
+			return new String[]{DEFAULT_CONFIG_LOCATION};
 		}
 	}
 

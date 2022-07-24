@@ -151,8 +151,7 @@ public abstract class AnnotationConfigUtils {
 	 * @return a Set of BeanDefinitionHolders, containing all bean definitions
 	 * that have actually been registered by this call
 	 */
-	public static Set<BeanDefinitionHolder> registerAnnotationConfigProcessors(
-			BeanDefinitionRegistry registry, @Nullable Object source) {
+	public static Set<BeanDefinitionHolder> registerAnnotationConfigProcessors(BeanDefinitionRegistry registry, @Nullable Object source) {
 		// 将 registry 强行转换为 真正的对象
 		DefaultListableBeanFactory beanFactory = unwrapDefaultListableBeanFactory(registry);
 		// 将那些处理注解的基础设施类添加到 DefaultListableBeanFactory中
