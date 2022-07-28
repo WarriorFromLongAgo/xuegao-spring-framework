@@ -882,6 +882,9 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 	/**
 	 * //DefaultListableBeanFactory
 	 * registerBeanDefinition
+	 * 向此类注册BeanDefinition的实质性方法
+	 * 其最终的目的是向beanDefinitionMap属性这个Map中put BeanName键对应的BeanDefinition
+	 * 这个Map中存放了spring容器中所有的BeanDefinition
 	 *
 	 * @param beanName:
 	 * @param beanDefinition:
@@ -896,6 +899,7 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 		Assert.hasText(beanName, "Bean name must not be empty");
 		Assert.notNull(beanDefinition, "BeanDefinition must not be null");
 
+		// beanDefinition的验证
 		if (beanDefinition instanceof AbstractBeanDefinition) {
 			try {
 				((AbstractBeanDefinition) beanDefinition).validate();
@@ -905,8 +909,10 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 			}
 		}
 
+		// 通过beanName在beanDefinitionMap中获取BeanDefinition
 		BeanDefinition existingDefinition = this.beanDefinitionMap.get(beanName);
 		if (existingDefinition != null) {
+			// 如果已经存在对应的BeanDefinition,判断是否覆盖，不覆盖的话就抛异常
 			if (!isAllowBeanDefinitionOverriding()) {
 				throw new BeanDefinitionOverrideException(beanName, beanDefinition, existingDefinition);
 			} else if (existingDefinition.getRole() < beanDefinition.getRole()) {
@@ -929,8 +935,10 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 							"] with [" + beanDefinition + "]");
 				}
 			}
+			// 向DefaultListableBeanFactory中的beanDefinitionMap注册类
 			this.beanDefinitionMap.put(beanName, beanDefinition);
 		} else {
+			// 如果Map中不存在需要注册bean的信息，看看是否需要在同步的环境下注册
 			if (hasBeanCreationStarted()) {
 				// Cannot modify startup-time collection elements anymore (for stable iteration)
 				synchronized (this.beanDefinitionMap) {
@@ -942,9 +950,16 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 					removeManualSingletonName(beanName);
 				}
 			} else {
+				/**
+				 * 在此类DefaultListableBeanFactory中维护了一个Map，此Map相当重要，此Map中存储了应用的类
+				 * 此Map变量就是beanDefinitionMap，向此Map中put就是将类注册进BeanFactory中了
+				 * 但是代码运行到这，发现Map中已经存在6个类了，这6个类很重要
+				 */
 				// Still in startup registration phase
 				this.beanDefinitionMap.put(beanName, beanDefinition);
+				// 将beanName添加到beanDefinitionNames这个list集合中
 				this.beanDefinitionNames.add(beanName);
+				// 将beanName从manualSingletonNames这个set集合中删除，这个集合存放着手动注册的单例实例的BeanName
 				removeManualSingletonName(beanName);
 			}
 			this.frozenBeanDefinitionNames = null;
@@ -1162,22 +1177,47 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 		return null;
 	}
 
+	/**
+	 * 根据此工厂中定义的bean解析指定的依赖关系
+	 */
 	@Override
 	@Nullable
 	public Object resolveDependency(DependencyDescriptor descriptor, @Nullable String requestingBeanName,
 									@Nullable Set<String> autowiredBeanNames, @Nullable TypeConverter typeConverter) throws BeansException {
 
+		/**
+		 * 设置方法参数名的解析器策略
+		 */
 		descriptor.initParameterNameDiscovery(getParameterNameDiscoverer());
+		/**
+		 * 获取方法参数的包装类型或字段的声明类型是否是Optional类型
+		 * 此类型是包装类，可优雅判断空情况
+		 * 则返回包装有实际Bean的Optional对象
+		 */
 		if (Optional.class == descriptor.getDependencyType()) {
 			return createOptionalDependency(descriptor, requestingBeanName);
-		} else if (ObjectFactory.class == descriptor.getDependencyType() ||
-				ObjectProvider.class == descriptor.getDependencyType()) {
+		} else if (ObjectFactory.class == descriptor.getDependencyType() || ObjectProvider.class == descriptor.getDependencyType()) {
+			/**
+			 * ObjectProvider和javax.inject.Provider与ObjectFactory意义差不多，只不过是不同的机构定义的标准
+			 * ObjectProvider是ObjectFactory的一种变体，没用过
+			 */
 			return new DependencyObjectProvider(descriptor, requestingBeanName);
 		} else if (javaxInjectProviderClass == descriptor.getDependencyType()) {
 			return new Jsr330Factory().createDependencyProvider(descriptor, requestingBeanName);
 		} else {
+			/**
+			 * 解析需要注入的setter方法或属性上是否有Lazy注解
+			 * 1、存在的话就返回一个代理对象使其依赖上，并不是真正的Bean，当调用的时候再从容器中获取真正的Bean
+			 * 		这样可以在解析依赖的时候不触发依赖Bean的创建，但是本Bean中的属性就一直为代理Bean了，
+			 * 		无论是第一次还是多次调用时，真正的Bean不会替换这个代理Bean
+			 * 2、不存在的话就返回空，从容器中获取真正的Bean使其依赖上
+			 * @see org.springframework.context.annotation.ContextAnnotationAutowireCandidateResolver#getLazyResolutionProxyIfNecessary(org.springframework.beans.factory.config.DependencyDescriptor, java.lang.String)
+			 */
 			Object result = getAutowireCandidateResolver().getLazyResolutionProxyIfNecessary(
 					descriptor, requestingBeanName);
+			/**
+			 * 直接进行依赖，利用依赖项描述符从容器中获取
+			 */
 			if (result == null) {
 				result = doResolveDependency(descriptor, requestingBeanName, autowiredBeanNames, typeConverter);
 			}
@@ -1189,24 +1229,69 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 	public Object doResolveDependency(DependencyDescriptor descriptor, @Nullable String beanName,
 									  @Nullable Set<String> autowiredBeanNames, @Nullable TypeConverter typeConverter) throws BeansException {
 
+		/**
+		 * 将依赖项描述符设置进本地线程中
+		 */
 		InjectionPoint previousInjectionPoint = ConstructorResolver.setCurrentInjectionPoint(descriptor);
 		try {
+			/**
+			 * 利用快捷缓存解析获取此依赖项，Spring默认返回空
+			 * 意义在于程序员可以在子类工厂中重写此方法进行快捷获取
+			 */
 			Object shortcut = descriptor.resolveShortcut(this);
 			if (shortcut != null) {
 				return shortcut;
 			}
 
+			/**
+			 * 获取setter方法的参数类型或属性的类型
+			 */
 			Class<?> type = descriptor.getDependencyType();
+			/**
+			 * 获取Setter方法或属性上{@link org.springframework.beans.factory.annotation.Value}注解中的参数
+			 * 里面代码自行断点查看，不解释
+			 * @see QualifierAnnotationAutowireCandidateResolver#getSuggestedValue(org.springframework.beans.factory.config.DependencyDescriptor)
+			 */
 			Object value = getAutowireCandidateResolver().getSuggestedValue(descriptor);
+			/**
+			 * 存在@Value注解则需要对其进行解析
+			 */
 			if (value != null) {
+				/**
+				 * 注解中的value属性值是String类型的(只能是String类型的)
+				 */
 				if (value instanceof String) {
+					/**
+					 * 使用属性值字符串解析器解析，解析@Value("${xxxx}")用法，获取配置文件中的配置
+					 */
 					String strVal = resolveEmbeddedValue((String) value);
+					/**
+					 * 获取依赖项所在Bean的BeanDefinition
+					 */
 					BeanDefinition bd = (beanName != null && containsBean(beanName) ?
 							getMergedBeanDefinition(beanName) : null);
+					/**
+					 * 解析字符串，可能将其解析为表达式(Spel表达式)
+					 * 例如：@Value("#{service.getDict()}"),获取容器中一个实例的方法或属性，
+					 * 		这种方式有限制，具体自行百度测试
+					 */
 					value = evaluateBeanDefinitionString(strVal, bd);
 				}
+				/**
+				 * 获取类型转换器
+				 */
 				TypeConverter converter = (typeConverter != null ? typeConverter : getTypeConverter());
 				try {
+					/**
+					 * 查看依赖描述符中是否是属性依赖还是Setter方法依赖，并进入不同的方法中
+					 * 以下两个方法最后进入的是同一个方法，只不过通过参数来对那一个方法进行处理
+					 * Setter方法依赖
+					 * @see TypeConverterSupport#convertIfNecessary(java.lang.Object, java.lang.Class, org.springframework.core.MethodParameter)
+					 * 属性依赖
+					 * @see TypeConverterSupport#convertIfNecessary(java.lang.Object, java.lang.Class, java.lang.reflect.Field)
+					 * 最终都会进入的方法
+					 * @see TypeConverterSupport#doConvert(java.lang.Object, java.lang.Class, org.springframework.core.MethodParameter, java.lang.reflect.Field)
+					 */
 					return converter.convertIfNecessary(value, type, descriptor.getTypeDescriptor());
 				} catch (UnsupportedOperationException ex) {
 					// A custom TypeConverter which does not support TypeDescriptor resolution...
@@ -1215,12 +1300,16 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 							converter.convertIfNecessary(value, type, descriptor.getMethodParameter()));
 				}
 			}
-
+			/**
+			 * 解析依赖的类型是数组、集合情况
+			 */
 			Object multipleBeans = resolveMultipleBeans(descriptor, beanName, autowiredBeanNames, typeConverter);
 			if (multipleBeans != null) {
 				return multipleBeans;
 			}
-
+			/**
+			 * 获得容器中所有与依赖类型相符的BeanName和Class对象
+			 */
 			Map<String, Object> matchingBeans = findAutowireCandidates(beanName, type, descriptor);
 			if (matchingBeans.isEmpty()) {
 				if (isRequired(descriptor)) {
@@ -1228,12 +1317,24 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 				}
 				return null;
 			}
-
+			/**
+			 * 确定注入的BeanName和Class对象
+			 */
 			String autowiredBeanName;
 			Object instanceCandidate;
-
+			/**
+			 * 找到依赖的类型在容器中存在多个，则进行处理
+			 */
 			if (matchingBeans.size() > 1) {
+				/**
+				 * 获取有没有优先使用的Bean，即查找@Primary和@Priority注解，确定主要使用哪一个
+				 */
 				autowiredBeanName = determineAutowireCandidate(matchingBeans, descriptor);
+				/**
+				 * 找不到确定使用的Bean，符合下列条件之一就会抛异常，否则返回空
+				 * 		1、依赖项是必须注入的，存在@Required注解
+				 * 		2、依赖项不是数组或集合
+				 */
 				if (autowiredBeanName == null) {
 					if (isRequired(descriptor) || !indicatesMultipleBeans(type)) {
 						return descriptor.resolveNotUnique(descriptor.getResolvableType(), matchingBeans);
@@ -1244,32 +1345,53 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 						return null;
 					}
 				}
+				/**
+				 * 找到确定使用的Bean，则给到变量中
+				 */
 				instanceCandidate = matchingBeans.get(autowiredBeanName);
 			} else {
+				/**
+				 * 容器中找到依赖的类型只有一个，则进行赋值
+				 */
 				// We have exactly one match.
 				Map.Entry<String, Object> entry = matchingBeans.entrySet().iterator().next();
 				autowiredBeanName = entry.getKey();
 				instanceCandidate = entry.getValue();
 			}
-
+			/**
+			 * 将依赖的BeanName放入到集合中，通过代码追踪可知为了销毁使用
+			 */
 			if (autowiredBeanNames != null) {
 				autowiredBeanNames.add(autowiredBeanName);
 			}
+			/**
+			 * 解析依赖项，从容器中获取实例,实际上就是调用getBean方法
+			 */
 			if (instanceCandidate instanceof Class) {
 				instanceCandidate = descriptor.resolveCandidate(autowiredBeanName, type, this);
 			}
 			Object result = instanceCandidate;
+			/**
+			 * 实例为空(NullBean为Spring内部中对空对象的表示)，判断存不存在@Required注解必须注入
+			 * 来进行抛异常或返回空
+			 */
 			if (result instanceof NullBean) {
 				if (isRequired(descriptor)) {
 					raiseNoMatchingBeanFound(type, descriptor.getResolvableType(), descriptor);
 				}
 				result = null;
 			}
+			/**
+			 * 判断从容器中找出的实例和依赖的类型是否一致，不一致抛异常
+			 */
 			if (!ClassUtils.isAssignableValue(type, result)) {
 				throw new BeanNotOfRequiredTypeException(autowiredBeanName, type, instanceCandidate.getClass());
 			}
 			return result;
 		} finally {
+			/**
+			 * 将依赖项描述符从本地线程中删除
+			 */
 			ConstructorResolver.setCurrentInjectionPoint(previousInjectionPoint);
 		}
 	}
@@ -1277,7 +1399,9 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 	@Nullable
 	private Object resolveMultipleBeans(DependencyDescriptor descriptor, @Nullable String beanName,
 										@Nullable Set<String> autowiredBeanNames, @Nullable TypeConverter typeConverter) {
-
+		/**
+		 * 获取依赖的类型
+		 */
 		Class<?> type = descriptor.getDependencyType();
 
 		if (descriptor instanceof StreamDependencyDescriptor) {
@@ -1293,6 +1417,9 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 			}
 			return stream;
 		} else if (type.isArray()) {
+			/**
+			 * 依赖的类型是数组
+			 */
 			Class<?> componentType = type.getComponentType();
 			ResolvableType resolvableType = descriptor.getResolvableType();
 			Class<?> resolvedArrayType = resolvableType.resolve(type);
@@ -1320,6 +1447,9 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 			}
 			return result;
 		} else if (Collection.class.isAssignableFrom(type) && type.isInterface()) {
+			/**
+			 * 依赖的类型属于单列集合并且是接口，则解析成集合返回，处理思路和数组一样
+			 */
 			Class<?> elementType = descriptor.getResolvableType().asCollection().resolveGeneric();
 			if (elementType == null) {
 				return null;
@@ -1344,6 +1474,9 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 			}
 			return result;
 		} else if (Map.class == type) {
+			/**
+			 * 如果依赖是Map集合，则处理思路比数组少一步
+			 */
 			ResolvableType mapType = descriptor.getResolvableType().asMap();
 			Class<?> keyType = mapType.resolveGeneric(0);
 			if (String.class != keyType) {
