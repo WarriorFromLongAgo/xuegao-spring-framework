@@ -16,14 +16,6 @@
 
 package org.springframework.beans.factory.support;
 
-import java.lang.reflect.Constructor;
-import java.util.Arrays;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.Map;
-import java.util.Set;
-import java.util.function.Supplier;
-
 import org.springframework.beans.BeanMetadataAttributeAccessor;
 import org.springframework.beans.MutablePropertyValues;
 import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
@@ -36,6 +28,10 @@ import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.ObjectUtils;
 import org.springframework.util.StringUtils;
+
+import java.lang.reflect.Constructor;
+import java.util.*;
+import java.util.function.Supplier;
 
 /**
  * Base class for concrete, full-fledged {@link BeanDefinition} classes,
@@ -1082,8 +1078,10 @@ public abstract class AbstractBeanDefinition extends BeanMetadataAttributeAccess
 	 * @throws BeanDefinitionValidationException in case of validation failure
 	 */
 	public void prepareMethodOverrides() throws BeanDefinitionValidationException {
+		//同步枷锁
 		// Check that lookup methods exist and determine their overloaded status.
 		if (hasMethodOverrides()) {
+			// 遍历执行prepareMethodOverride方法进行验证
 			getMethodOverrides().getOverrides().forEach(this::prepareMethodOverride);
 		}
 	}
@@ -1096,6 +1094,7 @@ public abstract class AbstractBeanDefinition extends BeanMetadataAttributeAccess
 	 * @throws BeanDefinitionValidationException in case of validation failure
 	 */
 	protected void prepareMethodOverride(MethodOverride mo) throws BeanDefinitionValidationException {
+		// 获取对应类中的方法名的个数
 		int count = ClassUtils.getMethodCountForName(getBeanClass(), mo.getMethodName());
 		if (count == 0) {
 			throw new BeanDefinitionValidationException(
@@ -1103,6 +1102,7 @@ public abstract class AbstractBeanDefinition extends BeanMetadataAttributeAccess
 					"' on class [" + getBeanClassName() + "]");
 		}
 		else if (count == 1) {
+			// 进行对MethodOverride没有被覆盖,主要是为了避免参数类型检查的开始
 			// Mark override as not overloaded, to avoid the overhead of arg type checking.
 			mo.setOverloaded(false);
 		}

@@ -120,6 +120,7 @@ public class DefaultSingletonBeanRegistry extends SimpleAliasRegistry implements
 
 	/**
 	 * Map between dependent bean names: bean name to Set of dependent bean names.
+	 * 保存的是依赖beanName之间的映射关系
 	 */
 	private final Map<String, Set<String>> dependentBeanMap = new ConcurrentHashMap<>(64);
 
@@ -429,6 +430,7 @@ public class DefaultSingletonBeanRegistry extends SimpleAliasRegistry implements
 	}
 
 	/**
+	 * 给当前bean注册一个依赖的bean
 	 * Register a dependent bean for the given bean,
 	 * to be destroyed before the given bean is destroyed.
 	 *
@@ -436,8 +438,9 @@ public class DefaultSingletonBeanRegistry extends SimpleAliasRegistry implements
 	 * @param dependentBeanName the name of the dependent bean
 	 */
 	public void registerDependentBean(String beanName, String dependentBeanName) {
+		//获取原始beanName
 		String canonicalName = canonicalName(beanName);
-
+		// 添加 <canonicalName, <dependentBeanName>> 到 dependentBeanMap 中
 		synchronized (this.dependentBeanMap) {
 			Set<String> dependentBeans =
 					this.dependentBeanMap.computeIfAbsent(canonicalName, k -> new LinkedHashSet<>(8));
@@ -468,22 +471,29 @@ public class DefaultSingletonBeanRegistry extends SimpleAliasRegistry implements
 	}
 
 	private boolean isDependent(String beanName, String dependentBeanName, @Nullable Set<String> alreadySeen) {
+		//如果是alreadySeen中包含beanName说明已经注册了依赖的bean
 		if (alreadySeen != null && alreadySeen.contains(beanName)) {
 			return false;
 		}
+		//获取最原始bean 的beanName
 		String canonicalName = canonicalName(beanName);
+		//从dependentBeanMap中通过beanName获取所有的依赖bean的集合
 		Set<String> dependentBeans = this.dependentBeanMap.get(canonicalName);
 		if (dependentBeans == null) {
 			return false;
 		}
+		//如果dependentBeanName存在于dependentBeans中,说明已经有依赖的bean
 		if (dependentBeans.contains(dependentBeanName)) {
 			return true;
 		}
+		//遍历
 		for (String transitiveDependency : dependentBeans) {
 			if (alreadySeen == null) {
 				alreadySeen = new HashSet<>();
 			}
+			//将beanName添加到alreadySeen中作为参数
 			alreadySeen.add(beanName);
+			//递归调用自己
 			if (isDependent(transitiveDependency, dependentBeanName, alreadySeen)) {
 				return true;
 			}
