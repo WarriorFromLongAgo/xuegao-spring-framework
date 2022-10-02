@@ -826,48 +826,77 @@ public class DefaultListableBeanFactory extends AbstractAutowireCapableBeanFacto
 			logger.trace("Pre-instantiating singletons in " + this);
 		}
 
+		// 获取所有已注册的 beanDefinition name。
 		// Iterate over a copy to allow for init methods which in turn register new bean definitions.
 		// While this may not be part of the regular factory bootstrap, it does otherwise work fine.
 		List<String> beanNames = new ArrayList<>(this.beanDefinitionNames);
 
+		// 遍历，为每一个 name 执行实例化。
 		// Trigger initialization of all non-lazy singleton beans...
 		for (String beanName : beanNames) {
+			/**
+			 如果 beanFactory 的 mergedBeanDefinition 属性有 beanName 对应的 beanDefinition，那就直接返回，
+			 否则，从 beanDefinitionMap 中拿出 beanName 对应的 beanDefinition 再合并成(可能) RootBeanDefinition 类型的
+			 beanDefinition 保存到 mergedBeanDefinition 属性中，同时也将合并后的 beanDefinition 返回。
+			 */
 			RootBeanDefinition bd = getMergedLocalBeanDefinition(beanName);
+			// 如果 不是抽象的 且 是单例 且 不是懒加载的，才能实例化。
 			if (!bd.isAbstract() && bd.isSingleton() && !bd.isLazyInit()) {
+				// 再判断 bd 有没有实现 FactoryBean 接口。
 				if (isFactoryBean(beanName)) {
+					// 如果实现了，那这里是要实例化 FactoryBean 的，所以 beanName 前面要加 ‘&’ 前缀。
+					// 拿出来的 bean 的类型是 FactoryBean。（Factorybean 应该已经被注册了）
 					Object bean = getBean(FACTORY_BEAN_PREFIX + beanName);
+					// 为了保险起见，这里又再判断了下。（如果没有这个判断，下面的强制类型转换会报 warning）
 					if (bean instanceof FactoryBean) {
+						// 强制类型转换。
 						FactoryBean<?> factory = (FactoryBean<?>) bean;
+						// 标志符，表示是否提前实例化 FactoryBean.getObject() 返回的对象。
 						boolean isEagerInit;
+						// 接下来是，两种场景下修改 isEagerInit 标志符
 						if (System.getSecurityManager() != null && factory instanceof SmartFactoryBean) {
+							// (1) 系统安全管理开启的模式下。
 							isEagerInit = AccessController.doPrivileged(
 									(PrivilegedAction<Boolean>) ((SmartFactoryBean<?>) factory)::isEagerInit,
 									getAccessControlContext());
 						} else {
+							// (2) 系统安全模式位开启的模式下。
 							isEagerInit = (factory instanceof SmartFactoryBean &&
 									((SmartFactoryBean<?>) factory).isEagerInit());
 						}
+						// 如果可以提前实例化 FactoryBean.getObject() 返回的对象
 						if (isEagerInit) {
+							// 那就实例化，
 							getBean(beanName);
 						}
 					}
 				} else {
+					// 如果 bd 没有实现 FactoryBean 接口，那就简单了，当做普通类直接实例化就行了。
 					getBean(beanName);
 				}
 			}
 		}
+		// 到这里 beanDefinition 就变成了 bean 并注册了。
 
+		// 后置初始化 bean。
+		// 遍历 beanNames
 		// Trigger post-initialization callback for all applicable beans...
 		for (String beanName : beanNames) {
+			// 获取对应的 bean
 			Object singletonInstance = getSingleton(beanName);
+			// 如果这个 bean 是 SmartInitializingSingleton 类型的。
 			if (singletonInstance instanceof SmartInitializingSingleton) {
+				// 类型转换
 				SmartInitializingSingleton smartSingleton = (SmartInitializingSingleton) singletonInstance;
+				// 接下来是两种不同的场景下执行 afterSingletonsInstantiated() 方法。
 				if (System.getSecurityManager() != null) {
+					// 系统安全管理开启的情况下。
 					AccessController.doPrivileged((PrivilegedAction<Object>) () -> {
 						smartSingleton.afterSingletonsInstantiated();
 						return null;
 					}, getAccessControlContext());
 				} else {
+					// 系统安全管理未开启的场景下。
 					smartSingleton.afterSingletonsInstantiated();
 				}
 			}

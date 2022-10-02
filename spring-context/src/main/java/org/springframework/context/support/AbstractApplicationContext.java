@@ -757,12 +757,17 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 		// 为什么得不到getBeanFactoryPostProcessors（）这个方法是直接获取一个list，
 		// 这个list是在AnnotationConfigApplicationContext被定义
 		// 所谓的自定义的就是你手动调用AnnotationConfigApplicationContext.addBeanFactoryPostProcesor();
+
+		// 执行每一个 beanFactoryPostProcessor。
+		// 必须在 class 变成 bean 之前，按照给定的顺序(如果有)实例化所有已注册的 beanFactoryPostProcessor。
 		PostProcessorRegistrationDelegate.invokeBeanFactoryPostProcessors(beanFactory, getBeanFactoryPostProcessors());
 
 		// Detect a LoadTimeWeaver and prepare for weaving, if found in the meantime
 		// (e.g. through an @Bean method registered by ConfigurationClassPostProcessor)
 		if (beanFactory.getTempClassLoader() == null && beanFactory.containsBean(LOAD_TIME_WEAVER_BEAN_NAME)) {
+			// 注册了一个beanPostProcessor。
 			beanFactory.addBeanPostProcessor(new LoadTimeWeaverAwareProcessor(beanFactory));
+			// 设置类加载器。
 			beanFactory.setTempClassLoader(new ContextTypeMatchClassLoader(beanFactory.getBeanClassLoader()));
 		}
 	}
@@ -902,13 +907,21 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 	 * initializing all remaining singleton beans.
 	 */
 	protected void finishBeanFactoryInitialization(ConfigurableListableBeanFactory beanFactory) {
+		// 注册类型转换器：ConversionService 对象
+		// 这里简单看下，套路都是差不多的。
+		// 判断 beanFactory 中有名字是 CONVERSION_SERVICE_BEAN_NAME 且类型是 ConversionService.class 的 bean 或者 beanDefinition。
 		// Initialize conversion service for this context.
 		if (beanFactory.containsBean(CONVERSION_SERVICE_BEAN_NAME) &&
 				beanFactory.isTypeMatch(CONVERSION_SERVICE_BEAN_NAME, ConversionService.class)) {
+			// 判断通过了，getBean() 拿 名字是 CONVERSION_SERVICE_BEAN_NAME 且类型是 ConversionService.class 的 bean，
+			// 如果能拿到就返回 bean，如果拿不到就创建这样名字和类型的 bean，保存到 singleObject ，再返回 bean。
+			// 最后 setConversionService(bean) 向 beanFactory 注册类型转换器。
 			beanFactory.setConversionService(
 					beanFactory.getBean(CONVERSION_SERVICE_BEAN_NAME, ConversionService.class));
 		}
 
+		// 如果没有就添加...，有就跳过。
+		// 这是给 beanFactory 添加了 value 解析器，主要用于 @Value 注解的解析。
 		// Register a default embedded value resolver if no bean post-processor
 		// (such as a PropertyPlaceholderConfigurer bean) registered any before:
 		// at this point, primarily for resolution in annotation attribute values.
@@ -916,18 +929,23 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 			beanFactory.addEmbeddedValueResolver(strVal -> getEnvironment().resolvePlaceholders(strVal));
 		}
 
+		// 实例化 LoadTimeWeaverAware beans。
 		// Initialize LoadTimeWeaverAware beans early to allow for registering their transformers early.
 		String[] weaverAwareNames = beanFactory.getBeanNamesForType(LoadTimeWeaverAware.class, false, false);
 		for (String weaverAwareName : weaverAwareNames) {
 			getBean(weaverAwareName);
 		}
 
+		// 禁止使用临时的类加载器
 		// Stop using the temporary ClassLoader for type matching.
 		beanFactory.setTempClassLoader(null);
 
+		// 禁止再对已注册的 beanDefinition 做修改，因为接下来要开始创建 bean 了。
 		// Allow for caching all bean definition metadata, not expecting further changes.
 		beanFactory.freezeConfiguration();
 
+		// 重点在这里。
+		// 实例化所有剩余的(非懒加载)的单例。
 		// Instantiate all remaining (non-lazy-init) singletons.
 		beanFactory.preInstantiateSingletons();
 	}

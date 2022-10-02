@@ -139,19 +139,29 @@ class ConfigurationClassParser {
 	}
 
 
+	/**
+	 * ConfigurationClassParser.java
+	 * 与其说这里是在解析配置类，倒不如说这里是在解析配置类上的注解，并执行注解对应的操作。
+	 */
 	public void parse(Set<BeanDefinitionHolder> configCandidates) {
+		// 遍历每一个配置类的 BeanDefinitionHolder。
 		// 根据BeanDefinition 的类型 做不同的处理,一般都会调用ConfigurationClassParser#parse 进行解析
 		for (BeanDefinitionHolder holder : configCandidates) {
+			// 把 beanDefiniton 拿出来。
 			BeanDefinition bd = holder.getBeanDefinition();
 			try {
+				// (依据 beanDefinition 的类型，执行不同的 parser)
 				if (bd instanceof AnnotatedBeanDefinition) {
 					// 解析注解对象，并且把解析出来的bd放到map，但是这里的bd指的是普通的
 					// 何谓不普通的呢？比如@Bean 和各种beanFactoryPostProcessor得到的bean不在这里put
 					// 但是是这里解析，只是不put而已
+					// 如果是 AnnotatedBeanDefinition 类型。（启动类就是这种类型）
 					parse(((AnnotatedBeanDefinition) bd).getMetadata(), holder.getBeanName());
 				} else if (bd instanceof AbstractBeanDefinition && ((AbstractBeanDefinition) bd).hasBeanClass()) {
+					// 如果是 AbstractBeanDefinition 类型。
 					parse(((AbstractBeanDefinition) bd).getBeanClass(), holder.getBeanName());
 				} else {
+					// 其余类型。
 					parse(bd.getBeanClassName(), holder.getBeanName());
 				}
 			} catch (BeanDefinitionStoreException ex) {
@@ -161,10 +171,20 @@ class ConfigurationClassParser {
 						"Failed to parse configuration class [" + bd.getBeanClassName() + "]", ex);
 			}
 		}
-
+		// 上面解析的基本都是程序员自己开发的类，通过启动类的 @ComponentScan 注解递归递归基包下的所有配置类。
+		//----------------- 分界线 --------------
+		// 下面解析的部分框架默认的，那些写在 META-INF/spring.factories 文件中的 EnableAutoConfiguration 的子类，
+		// 为什么只解析部分？
+		// 因为好些类上都有 @Conditional 注解，只有满足其条件的才能解析那些类。
+		//（这个方法我测试了下，具体的细节没有看）
 		this.deferredImportSelectorHandler.process();
 	}
 
+	/**
+	 * ConfigurationClassParser.java
+	 * 很明显，三个 parser 方法虽然入口参数不一样，但是都构建成 ConfigurationClass 对象，
+	 * 然后送入 processConfigurationClass() 中执行。
+	 */
 	protected final void parse(@Nullable String className, String beanName) throws IOException {
 		Assert.notNull(className, "No bean class name for configuration class bean definition");
 		MetadataReader reader = this.metadataReaderFactory.getMetadataReader(className);
@@ -175,7 +195,9 @@ class ConfigurationClassParser {
 		processConfigurationClass(new ConfigurationClass(clazz, beanName));
 	}
 
+	//  启动类会执行这个方法。
 	protected final void parse(AnnotationMetadata metadata, String beanName) throws IOException {
+		//  使用 metadata 和 beanName 创建 ConfigurationClass 对象，送到 processConfigurationClass 方法中去解析。
 		processConfigurationClass(new ConfigurationClass(metadata, beanName));
 	}
 
@@ -194,30 +216,51 @@ class ConfigurationClassParser {
 		return this.configurationClasses.keySet();
 	}
 
-
+	/**
+	 * ConfigurationClassParser.java
+	 * processConfigurationClass() 主要做流程控制，里面的 doProcessConfigurationClass() 是真正负责解析的。
+	 * 记住：当前的代码块是在解析器中。
+	 */
 	protected void processConfigurationClass(ConfigurationClass configClass) throws IOException {
+		// 判断 configClass 中有没有 @Conditional 注解，并且当前环境是是否满足其条件，如果不满足，那 configClass 不解析。
 		if (this.conditionEvaluator.shouldSkip(configClass.getMetadata(), ConfigurationPhase.PARSE_CONFIGURATION)) {
+			// 直接返回。
 			return;
 		}
+		// 这块代码主要主判断 configClass 是不是已经被解析了，如果没有还被解析，直接执行后面的代码。
 		// 处理Imported 的情况
 		// 就是当前这个注解类有没有被别的类import
+		// 先从 configurationClasses 中拿一下，看是否能拿到。（如果没有被解析，当然拿不到，所以启动类肯定是从里面拿不到的）
 		ConfigurationClass existingClass = this.configurationClasses.get(configClass);
+		// 如果已经被解析了
 		if (existingClass != null) {
+			// 再判断 configClass 是通过 @Import 注解要注册的。
 			if (configClass.isImported()) {
+				// 如果 existingClass 也是通过 @Import 注解 注册的。
 				if (existingClass.isImported()) {
+					// 合并两个 ConfigurationClass 对象。
 					existingClass.mergeImportedBy(configClass);
 				}
+				// 无论是两者合并，还是值只以 existingClass 为准，到这里 configClass 就被解析完了，直接返回。
 				// Otherwise ignore new imported config class; existing non-imported class overrides it.
 				return;
 			} else {
 				// Explicit bean definition found, probably replacing an import.
 				// Let's remove the old one and go with the new one.
+				// 如果 configClass 不通过 @Import 注解要注册，
+				// 那么先得从 configurationClasses 中将 configClass 的信息移除。（因为接下来要重新加进去）
 				this.configurationClasses.remove(configClass);
 				this.knownSuperclasses.values().removeIf(configClass::equals);
 			}
 		}
-
+		/**
+		 接下来要正真开始解析 configClass。使用循环处理 configClass 的超类。
+		 do{...} 中的 sourceClass 代表超类，如果不为null，那就还需要循环再处理超类，
+		 超类可能还有超类....., 一直循环处理，直到 sourceClass == null，表示 configClass 解析完了。
+		 除此以外，doProcessConfigurationClass() 方法内部使用了递归。
+		 */
 		// Recursively process the configuration class and its superclass hierarchy.
+		// SourceClass 类型是对配置类的简单包装，目的是让不同的配置类以统一的方式被调用。
 		SourceClass sourceClass = asSourceClass(configClass);
 		do {
 			//具体的实现（重要）
@@ -225,6 +268,7 @@ class ConfigurationClassParser {
 		}
 		while (sourceClass != null);
 		// 一个map，用来存放扫描出来的bean（注意这里的bean不是对象，仅仅bean的信息，因为还没到实例化这一步）
+		// configClass解析完后，构建 configClass:configClass 键值对保存到 configurationClasses 中。
 		this.configurationClasses.put(configClass, configClass);
 	}
 

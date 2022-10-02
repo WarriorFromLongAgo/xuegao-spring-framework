@@ -44,27 +44,39 @@ final class PostProcessorRegistrationDelegate {
 
 	public static void invokeBeanFactoryPostProcessors(ConfigurableListableBeanFactory beanFactory,
 													   List<BeanFactoryPostProcessor> beanFactoryPostProcessors) {
-
+		// Invoke BeanDefinitionRegistryPostProcessors first, if any.
+		// 保存已经处理过的 beanName。
 		// Invoke BeanDefinitionRegistryPostProcessors first, if any.
 		Set<String> processedBeans = new HashSet<>();
-
+		// beanFactory 是实例是 DefaultListableBeanFactory，它实现了 BeanDefinitionRegistry 接口。
 		if (beanFactory instanceof BeanDefinitionRegistry) {
+			// 向上转型
 			BeanDefinitionRegistry registry = (BeanDefinitionRegistry) beanFactory;
 			// 定义了两个list存放
+			// 保存常规的 beanFactoryPostProcessor，没实现 BeanDefinitionRegistryPostProcessor 接口的都是常规的。
 			List<BeanFactoryPostProcessor> regularPostProcessors = new ArrayList<>();
+			// 保存非常规的 beanFactoryPostProcessor。
 			List<BeanDefinitionRegistryPostProcessor> registryProcessors = new ArrayList<>();
 
-			// 自定义的beanFactoryPostProcessors
+			// // 遍历已经注册的 beanFactoryPostProcessor。主要是自定义的beanFactoryPostProcessors
 			for (BeanFactoryPostProcessor postProcessor : beanFactoryPostProcessors) {
+				// 判断是否是非常规的。如果是，那就具有优先执行权。
 				if (postProcessor instanceof BeanDefinitionRegistryPostProcessor) {
+					// 类型转换，不然拿不到方法。
 					BeanDefinitionRegistryPostProcessor registryProcessor = (BeanDefinitionRegistryPostProcessor) postProcessor;
+					// 执行 postProcessBeanDefinitionRegistry
 					registryProcessor.postProcessBeanDefinitionRegistry(registry);
+					// 保存到 registryProcessors，为什么要保存？因为这货还有一个方法没执行呢。
 					registryProcessors.add(registryProcessor);
 				} else {
+					// 如果 postProcessor 是常规的，那它优先级不够，先保存。
 					regularPostProcessors.add(postProcessor);
 				}
 			}
 
+			// 到这里，bean 形式的 beanFactoryPostProcessor 已经拿出来了，并且执行了最高优先级的方法。
+			// 接下来要拿 “蓝图” 形式的了。
+			// 用来保存 beanDefinition 形式的 BeanDefinitionRegistryPostProcessor。
 			// 这个currentRegistryProcessors 放的是spring内部自己实现了BeanDefinitionRegistryPostProcessor接口的对象
 			// Do not initialize FactoryBeans here: We need to leave all regular beans
 			// uninitialized to let the bean factory post-processors apply to them!
@@ -76,6 +88,7 @@ final class PostProcessorRegistrationDelegate {
 			// getBeanNamesForType  根据bean的类型获取bean的名字ConfigurationClassPostProcessor
 			// First, invoke the BeanDefinitionRegistryPostProcessors that implement PriorityOrdered.
 			// 首先，调用实现优先级排序的 BeanDefinitionRegistryPostProcessors。
+			// 从 beanDefinitionMap 中获取与 BeanDefinitionRegistryPostProcessor.class 类型匹配的 beanDefinition 的 name。
 			String[] postProcessorNames =
 					beanFactory.getBeanNamesForType(BeanDefinitionRegistryPostProcessor.class, true, false);
 			// 这个地方可以得到一个BeanFactoryPostProcessor，因为是spring默认在最开始自己注册的
@@ -89,20 +102,30 @@ final class PostProcessorRegistrationDelegate {
 			// ConfigurationClassPostProcessor那么这个类能干嘛呢？可以参考源码
 			// 下面我们对这个牛逼哄哄的类（他能插手spring工厂的实例化过程还不牛逼吗？）重点解释
 			for (String ppName : postProcessorNames) {
+				// 判断 ppName 对应的 beanDefinition 是不是最高优先级。
 				if (beanFactory.isTypeMatch(ppName, PriorityOrdered.class)) {
+					// 如果是最高优先级，用 beanDefinition 创建 bean，并经创建出来的 bean 保存到 currentRegistryProcessors。
+					// beanFactory.getBean()先去 beanFactory 中找，有没有 ppName 对应的 bean，
+					// 如果有，直接拿出来；如果没有，先创建bean，并保存到 beanFactory，最后再将 bean 返回。
 					currentRegistryProcessors.add(beanFactory.getBean(ppName, BeanDefinitionRegistryPostProcessor.class));
+					// ppName 添加到 processedBeans。
 					processedBeans.add(ppName);
 				}
 			}
+			// 如果有多个同时具备最最高优先级，那他们之间也是需要在排序的。（这个不是重点）
 			// 排序不重要，况且currentRegistryProcessors这里也只有一个数据
 			sortPostProcessors(currentRegistryProcessors, beanFactory);
 			// 合并list，不重要(为什么要合并，因为还有自己的)
+			// 保存到 registryProcessors。
 			registryProcessors.addAll(currentRegistryProcessors);
 			// 最重要。注意这里是方法调用
 			// 执行所有BeanDefinitionRegistryPostProcessor（开始执行扫描包）
+			// 执行每一个 beanDefinitionRegistryPostProcessor 的 postProcessBeanDefinitionRegistry 方法。
 			invokeBeanDefinitionRegistryPostProcessors(currentRegistryProcessors, registry);
 			// 执行完成了所有BeanDefinitionRegistryPostProcessor
 			// 这个list只是一个临时变量，故而要清除
+			// Class implements BeanDefinitionRegistryPostProcessor, PriorityOrdered 就算是执行完了。
+			// 清空 currentRegistryProcessors，因为后面还要用。
 			currentRegistryProcessors.clear();
 
 			// Next, invoke the BeanDefinitionRegistryPostProcessors that implement Ordered.
