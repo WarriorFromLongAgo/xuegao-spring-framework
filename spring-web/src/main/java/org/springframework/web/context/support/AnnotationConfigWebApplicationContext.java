@@ -16,22 +16,20 @@
 
 package org.springframework.web.context.support;
 
-import java.util.Collections;
-import java.util.LinkedHashSet;
-import java.util.Set;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.support.BeanNameGenerator;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
-import org.springframework.context.annotation.AnnotatedBeanDefinitionReader;
-import org.springframework.context.annotation.AnnotationConfigRegistry;
-import org.springframework.context.annotation.AnnotationConfigUtils;
-import org.springframework.context.annotation.ClassPathBeanDefinitionScanner;
-import org.springframework.context.annotation.ScopeMetadataResolver;
+import org.springframework.context.annotation.*;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.context.ContextLoader;
+
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * {@link org.springframework.web.context.WebApplicationContext WebApplicationContext}
@@ -85,6 +83,8 @@ import org.springframework.web.context.ContextLoader;
  */
 public class AnnotationConfigWebApplicationContext extends AbstractRefreshableWebApplicationContext
 		implements AnnotationConfigRegistry {
+	private static final Logger logger = LoggerFactory.getLogger(AnnotationConfigWebApplicationContext.class);
+
 
 	@Nullable
 	private BeanNameGenerator beanNameGenerator;
